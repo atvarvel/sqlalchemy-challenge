@@ -1,4 +1,5 @@
 import numpy as np
+import datetime as dt
 
 import sqlalchemy
 from sqlalchemy.ext.automap import automap_base
@@ -11,7 +12,7 @@ from flask import Flask, jsonify
 #################################################
 # Database Setup
 #################################################
-engine = create_engine("sqlite:///titanic.sqlite")
+engine = create_engine("sqlite:///C://Users//atvar//OneDrive//Documents//Bootcamp//May_Homework//10-SQLAlchemy_Homework//Resources//hawaii.sqlite")
 
 # reflect an existing database into a new model
 Base = automap_base()
@@ -19,7 +20,8 @@ Base = automap_base()
 Base.prepare(engine, reflect=True)
 
 # Save reference to the table
-Passenger = Base.classes.passenger
+Measurement = Base.classes.measurement
+Station = Base.classes.station
 
 #################################################
 # Flask Setup
@@ -36,49 +38,122 @@ def welcome():
     """List all available api routes."""
     return (
         f"Available Routes:<br/>"
-        f"/api/v1.0/names<br/>"
-        f"/api/v1.0/passengers"
+        f"Precipitation: /api/v1.0/precipitation<br/>"
+        f"List of Stations: /api/v1.0/stations<br/>"
+        f"Temperature for one year: /api/v1.0/tobs<br/>"
+        f"Temperatures from start date (yyyy-mm-dd): /api/v1.0/yyyy-mm-dd<br/>"
+        f"Temperatures from start to end dates (yyyy-mm-dd): /api/v1.0/yyyy-mm-dd/yyyy-mm-dd"
     )
 
 
-@app.route("/api/v1.0/names")
-def names():
-    # Create our session (link) from Python to the DB
+@app.route("/api/v1.0/precipitation")
+def precipitation():
+
     session = Session(engine)
 
-    """Return a list of all passenger names"""
-    # Query all passengers
-    results = session.query(Passenger.name).all()
+    sel = [Measurement.date, Measurement.prcp]
+
+    results = session.query(*sel).all()
 
     session.close()
 
-    # Convert list of tuples into normal list
-    all_names = list(np.ravel(results))
+    precip = []
+    for date, prcp in results:
+        prcp_dict = {}
+        prcp_dict['Date'] = date
+        prcp_dict['Precipitation'] = prcp
+        precip.append(prcp_dict)
 
-    return jsonify(all_names)
+    return jsonify(precip)
 
 
-@app.route("/api/v1.0/passengers")
-def passengers():
-    # Create our session (link) from Python to the DB
+@app.route("/api/v1.0/stations")
+def stations():
+
     session = Session(engine)
 
-    """Return a list of passenger data including the name, age, and sex of each passenger"""
-    # Query all passengers
-    results = session.query(Passenger.name, Passenger.age, Passenger.sex).all()
+    sel = [Station.station, Station.name, Station.latitude, Station.longitude, Station.elevation]
+
+    results = session.query(*sel).all()
 
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all_passengers
-    all_passengers = []
-    for name, age, sex in results:
-        passenger_dict = {}
-        passenger_dict["name"] = name
-        passenger_dict["age"] = age
-        passenger_dict["sex"] = sex
-        all_passengers.append(passenger_dict)
+    stations = []
+    for station, name, lat, lon, elev in results:
+        station_dict = {}
+        station_dict['Station'] = station
+        station_dict['Name'] = name
+        station_dict['Latitude'] = lat
+        station_dict['Longitude'] = lon
+        station_dict['Elevation'] = elev
+        stations.append(station_dict)
 
-    return jsonify(all_passengers)
+    return jsonify(stations)
+
+
+@app.route("/api/v1.0/tobs")
+def tobs():
+
+    session = Session(engine)
+
+    most_recent = session.query(Measurement.date).order_by(Measurement.date.desc()).first()[0]
+
+    most_recent_date = dt.datetime.strptime(most_recent, '%Y-%m-%d')
+
+    query_date = dt.date(most_recent_date.year -1, most_recent_date.month, most_recent_date.day)
+
+    sel = [Measurement.date, Measurement.tobs]
+
+    results = session.query(*sel).filter(Measurement.date >= query_date).all()
+
+    session.close()
+
+    all_tobs = []
+    for date, tobs in results:
+        tobs_dict = {}
+        tobs_dict['Date'] = date
+        tobs_dict['Tobs'] = tobs
+        all_tobs.append(tobs_dict)
+
+    return jsonify(all_tobs)
+
+
+@app.route("/api/v1.0/<start>")
+def temp_start(start):
+
+    session = Session(engine)
+
+    results = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).filter(Measurement.date >= start).all()
+
+    session.close()
+
+    all_tobs = []
+    for min, max, avg in results:
+        tobs_dict = {}
+        tobs_dict['Min'] = min
+        tobs_dict['Max'] = max
+        tobs_dict['Average'] = avg
+        all_tobs.append(tobs_dict)
+
+    return jsonify(all_tobs)
+
+
+@app.route("/api/v1.0/<start>/<end>")
+def temp_range(start, end):
+
+    session = Session(engine)
+
+    results = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).filter(Measurement.date >= start).filter(Measurement.date <= end).all()
+
+    all_tobs = []
+    for min, max, avg in results:
+        tobs_dict = {}
+        tobs_dict['Min'] = min
+        tobs_dict['Max'] = max
+        tobs_dict['Average'] = avg
+        all_tobs.append(tobs_dict)
+
+    return jsonify(all_tobs)
 
 
 if __name__ == '__main__':
